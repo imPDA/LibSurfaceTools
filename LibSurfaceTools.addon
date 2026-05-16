@@ -6,7 +6,9 @@
 ## IsLibrary: true
 ; ## SavedVariables: ...
 ; ## DependsOn: ...
-; ## OptionalDependsOn: ...
+## OptionalDependsOn: Zgoo HarvestMap
+
+quadtree.lua
 
 controls.xml
 main.lua
