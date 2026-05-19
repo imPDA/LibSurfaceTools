@@ -279,19 +279,25 @@ function FlexRect:RemoveSurface(index)
     local surfaces = self.surfaces
     local surfaceData = surfaces[index]
 
-    table.remove(surfaces, index)
+    local surface = table.remove(surfaces, index)
     self.control:RemoveSurface(index)
 
     if self.quadtree then
         self.quadtree:Remove(surfaceData)
 
+        self.mouseOver[surface] = nil
+        self._onMouseExit(surface)
+
         -- TODO: rehashing is not the best thing to see... Very expensive deletion
         -- especially with clearing hash every time :>
-        local hash = self.hash
-        ZO_ClearTable(hash)
-        for i = 1, #surfaces do
-            hash[surfaces[i]] = i
-        end
+        -- local hash = self.hash
+        -- ZO_ClearTable(hash)
+        -- for i = 1, #surfaces do
+        --     hash[surfaces[i]] = i
+        -- end
+        -- TODO: check if is everything OK
+
+        self.hash[surface] = nil
     end
 end
 
