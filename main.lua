@@ -1,6 +1,7 @@
 local floor = math.floor
 local class = IMP_LibSurfaceTools__class
 local Quadtree = IMP_LibSurfaceTools__Quadtree
+local SurfaceManager = IMP_LibSurfaceTools__SurfaceManager
 
 -- ----------------------------------------------------------------------------
 
@@ -285,35 +286,27 @@ function FlexRect:RemoveSurface(index)
     if self.quadtree then
         self.quadtree:Remove(surfaceData)
 
+        -- TODO: rehashing is not the best thing to see... Very expensive deletion
+        local hash = self.hash
+        hash[surface] = nil
+        for i = index, #surfaces do
+            hash[surfaces[i]] = i
+        end
+
         self.mouseOver[surface] = nil
         self._onMouseExit(surface)
-
-        -- TODO: rehashing is not the best thing to see... Very expensive deletion
-        -- especially with clearing hash every time :>
-        -- local hash = self.hash
-        -- ZO_ClearTable(hash)
-        -- for i = 1, #surfaces do
-        --     hash[surfaces[i]] = i
-        -- end
-        -- TODO: check if is everything OK
-
-        self.hash[surface] = nil
     end
 end
 
-function FlexRect:RemoveSurfacesOfKind(atlasX, atlasY)
-    -- TODO: kinda slow, make hash table
+function FlexRect:RemoveSurfacesOfKind(atlasIndex)
+    -- TODO: kinda slow, make bulk delete
 
     if not self.atlas then return end
-
-    if atlasY == nil then
-        atlasX, atlasY = _atlasIndexToAtlasXY(atlasX, self.atlasSizeX, self.atlasSizeY)
-    end
 
     local surfaces = self.surfaces
     for index = #surfaces, 1, -1 do
         local surface = surfaces[index]
-        if surface[7] == atlasX and surface[8] == atlasY then
+        if surface[7] == atlasIndex then
             self:RemoveSurface(index)
         end
     end
@@ -321,11 +314,9 @@ end
 
 function FlexRect:Clear()
     self.control:ClearAllSurfaces()
-    -- self.control:ClearAnchors()
-
-    -- TODO: clear self.surfaces and self.hash
 
     ZO_ClearNumericallyIndexedTable(self.surfaces)
+    ZO_ClearTable(self.hash)
 
     if self.quadtree then
         self.quadtree:Clear()
