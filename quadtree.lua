@@ -1,17 +1,4 @@
-local function class()
-	local cls = {}
-	cls.__index = cls
-
-	setmetatable(cls, {
-        __call = function(self, ...)
-            local obj = setmetatable({}, cls)
-            if self.__init then self.__init(obj, ...) end
-            return obj
-        end
-	})
-
-	return cls
-end
+local class = IMP_LibSurfaceTools__class
 
 -- ----------------------------------------------------------------------------
 
@@ -142,4 +129,4 @@ end
 --     end
 -- end
 
-IMP_QuadTree = Quadtree
+IMP_LibSurfaceTools__Quadtree = Quadtree

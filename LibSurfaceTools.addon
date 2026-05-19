@@ -8,11 +8,13 @@
 ; ## DependsOn: ...
 ## OptionalDependsOn: Zgoo HarvestMap
 
+class.lua
 quadtree.lua
 
 controls.xml
 main.lua
-examples.lua
+; examples.lua
+; surfacemanager.lua
 
 ; This Add-on is not created by, affiliated with or sponsored by ZeniMax
 ; Media Inc. or its affiliates. The Elder Scrolls® and related logos are
