@@ -1,0 +1,10 @@
+V.3
+- New tool - RigidGrid
+- Added SurfaceManager
+- Rework for FlexRect tool
+
+V. 2
+- Hotfix for dangling surfaces after deletion during mouse over
+
+V. 1
+- Initial

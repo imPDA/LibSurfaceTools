@@ -1,7 +1,7 @@
 ## Title: |cAFD3FFLibSurfaceTools|r
 ## Description: Adapter for TexturesComposite controls
 ## Author: |c7c42f2@impda|r
-## AddOnVersion: 2
+## AddOnVersion: 3
 ## APIVersion: 101049
 ## IsLibrary: true
 ; ## SavedVariables: ...
@@ -12,9 +12,9 @@ class.lua
 quadtree.lua
 
 controls.xml
+surfacemanager.lua
 main.lua
 ; examples.lua
-; surfacemanager.lua
 
 ; This Add-on is not created by, affiliated with or sponsored by ZeniMax
 ; Media Inc. or its affiliates. The Elder Scrolls® and related logos are

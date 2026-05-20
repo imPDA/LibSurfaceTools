@@ -33,30 +33,54 @@ end
 --     return tiL, tiR, tiT, tiB
 -- end
 
+function GetTextureInsets(self, atlasIndex)  -- TODO: meta
+    if atlasIndex == nil then
+        return 0, 1, 0, 1
+    else
+        -- TODO: can store as precomputed values
+        local atlasStepX, atlasStepY = 1 / self.atlasSizeX, 1 / self.atlasSizeY
+
+        local atlasX, atlasY = _atlasIndexToAtlasXY(atlasIndex, self.atlasSizeX, self.atlasSizeY)
+
+        local tiR = atlasX * atlasStepX
+        local tiL = tiR - atlasStepX
+        local tiB = atlasY * atlasStepY
+        local tiT = tiB - atlasStepY
+
+        return tiL, tiR, tiT, tiB
+    end
+end
+
 -- ----------------------------------------------------------------------------
---[[
+----[[
 local RigidGrid = class()
 
-function RigidGrid:__init(sizeX, sizeY, cellW, cellH)
-    self.sizeX = sizeX
-    self.sizeY = sizeY
+function RigidGrid:__init(parent, name, cellW, cellH)
     self.cellW = cellW
     self.cellH = cellH
 
-    local control = CreateControl('$(parent)Grid'..addon.control:GetNumChildren(), addon.control, CT_TEXTURECOMPOSITE)
-    assert(control, 'TextureComposite was not created!')
+    name = name or ('$(parent)Grid' .. parent:GetNumChildren())
 
-    control:SetDimensions(sizeX * cellW, sizeY * cellH)
-    control:ClearAllSurfaces()
+    local composite = CreateControl(name, parent, CT_TEXTURECOMPOSITE)
+    assert(composite, 'TextureComposite was not created!')
 
-    self.control = control
+    -- control:SetDimensions(sizeX * cellW, sizeY * cellH)
+    composite:ClearAllSurfaces()
+    composite:SetAnchor(TOPLEFT, parent)
+
+    self.composite = composite
 
     return self
 end
 
 function RigidGrid:SetAnchor(...)
-    self.control:ClearAnchors()  -- only 1 anchor!
-    self.control:SetAnchor(...)
+    self.composite:ClearAnchors()  -- only 1 anchor!
+    self.composite:SetAnchor(...)
+    return self
+end
+
+function RigidGrid:SetOffsets(offsetX, offsetY)
+    self.composite:SetAnchorOffsets(offsetX, offsetY, 1)
     return self
 end
 
@@ -64,7 +88,7 @@ function RigidGrid:SetTexture(fileName, atlasSizeX, atlasSizeY)
     atlasSizeX = atlasSizeX or 1
     atlasSizeY = atlasSizeY or 1
 
-    self.control:SetTexture(fileName)
+    self.composite:SetTexture(fileName)
 
     if atlasSizeX > 1 or atlasSizeY > 1 then
         self.atlas = true
@@ -75,14 +99,11 @@ function RigidGrid:SetTexture(fileName, atlasSizeX, atlasSizeY)
     return self
 end
 
-function RigidGrid:Add(gridX, gridY, offsetX, offsetY, w, h, atlasX, atlasY)
+function RigidGrid:Add(gridX, gridY, offsetX, offsetY, w, h, atlasIndex)
     offsetX = offsetX or 0
     offsetY = offsetY or 0
 
-    local tiL, tiR, tiT, tiB
-    if self.atlas then
-        tiL, tiR, tiT, tiB = _getTextureInsets(atlasX, atlasY, self.atlasSizeX, self.atlasSizeY)
-    end
+    local tiL, tiR, tiT, tiB = self:GetTextureInsets(atlasIndex)
 
     gridX = gridX - 1
     gridY = gridY - 1
@@ -94,9 +115,18 @@ function RigidGrid:Add(gridX, gridY, offsetX, offsetY, w, h, atlasX, atlasY)
     local iL, iR = centerX - half_w, centerX + half_w
     local iT, iB = centerY - half_h, centerY + half_h
 
-    local surfaceNumber = self.control:AddSurface(tiL, tiR, tiT, tiB)
-    self.control:SetInsets(surfaceNumber, iL, iR, iT, iB)
+    local surfaceNumber = self.composite:AddSurface(tiL, tiR, tiT, tiB)
+    self.composite:SetInsets(surfaceNumber, iL, iR, iT, iB)
+
+    -- TODO: add to list
 end
+
+RigidGrid.GetTextureInsets = GetTextureInsets
+
+function RigidGrid:Clear()
+    self.composite:ClearAllSurfaces()
+end
+
 --]]
 -- ----------------------------------------------------------------------------
 
@@ -117,6 +147,7 @@ function FlexRect:__init(parent, name, onMouseEnter, onMouseExit)
     self.control = control
     self.parent = parent
 
+    self.surfaceManager = SurfaceManager(control)
     self.surfaces = {}
 
     if onMouseEnter then
@@ -125,7 +156,7 @@ function FlexRect:__init(parent, name, onMouseEnter, onMouseExit)
         self._onMouseExit = onMouseExit
         self.mouseOver = {}
 
-        self.hash = {}  -- setmetatable({}, {__mode='k'})
+        -- self.hash = {}  -- setmetatable({}, {__mode='k'})
 
         control:SetMouseEnabled(true)
 
@@ -144,7 +175,7 @@ function FlexRect:__init(parent, name, onMouseEnter, onMouseExit)
         -- if surface hidden, need to update all previously mouse over pins, TODO: make it effectively
         control:SetHandler('OnEffectivelyHidden', function()
             for surface in pairs(self.mouseOver) do
-                self._onMouseExit(surface)
+                self._onMouseExit(self.surfaces[surface].tag)
                 -- self:_updateSurface(self.hash[surface])
             end
         end)
@@ -186,59 +217,25 @@ function FlexRect:SetAlpha(surfaceIndex, alpha)
 end
 
 function FlexRect:Add(n_x, n_y, offsetX, offsetY, w, h, atlasIndex, tag)
-    local surfaceIndex = self.control:AddSurface(self:GetTextureInsets(atlasIndex))
-    self:_place(surfaceIndex, n_x, n_y, offsetX, offsetY, w, h)
+    local surface = self.surfaceManager:AddSurface(self:GetTextureInsets(atlasIndex))
+
+    self:_place(surface, n_x, n_y, offsetX, offsetY, w, h)
 
     -- not very safe, but it should work OK until someone used it inproperly
     local surfaceData = {n_x, n_y, offsetX, offsetY, w, h, atlasIndex, tag = tag}
-    self.surfaces[surfaceIndex] = surfaceData
+    self.surfaces[surface] = surfaceData
 
     if self.quadtree then
-        self.quadtree:Insert(n_x, n_y, surfaceData)
-        self.hash[surfaceData] = surfaceIndex
+        self.quadtree:Insert(n_x, n_y, surface)
+        -- self.hash[surfaceData] = surface
     end
 
-    -- yoooooooooooooooooooooo this is sick, don't do anything like that anymore
-    -- but it might theoretically work out
-    -- TODO: need to think about how to definetely determine surface and
-    -- rebuild this nasty stuff
-    -- TODO: wrapper `SurfaceManager`, wrapper `Surface`
-    local nastyWrapper = setmetatable({}, {
-        __index = function(t, k)
-            local original = self.control[k]
-            if type(original) == 'function' then
-                return function(self_, ...)
-                    original(self.control, self.hash[surfaceData], ...)
-                    return t
-                end
-            else
-                return original
-            end
-        end
-    })
-
-    return nastyWrapper
+    return surface
 end
 
-function FlexRect:GetTextureInsets(atlasIndex)
-    if atlasIndex == nil then
-        return 0, 1, 0, 1
-    else
-        -- TODO: can store as precomputed values
-        local atlasStepX, atlasStepY = 1 / self.atlasSizeX, 1 / self.atlasSizeY
+FlexRect.GetTextureInsets = GetTextureInsets
 
-        local atlasX, atlasY = _atlasIndexToAtlasXY(atlasIndex, self.atlasSizeX, self.atlasSizeY)
-
-        local tiR = atlasX * atlasStepX
-        local tiL = tiR - atlasStepX
-        local tiB = atlasY * atlasStepY
-        local tiT = tiB - atlasStepY
-
-        return tiL, tiR, tiT, tiB
-    end
-end
-
-function FlexRect:_place(surfaceIndex, n_x, n_y, offsetX, offsetY, w, h)
+function FlexRect:_place(surface, n_x, n_y, offsetX, offsetY, w, h)
     offsetX = offsetX or 0
     offsetY = offsetY or 0
 
@@ -252,49 +249,40 @@ function FlexRect:_place(surfaceIndex, n_x, n_y, offsetX, offsetY, w, h)
     local iL, iR = centerX - half_w, centerX + half_w
     local iT, iB = centerY - half_h, centerY + half_h
 
-    self.control:SetInsets(surfaceIndex, iL, iR, iT, iB)
+    surface:SetInsets(iL, iR, iT, iB)
 end
 
 function FlexRect:_onParentUpdate()
-    local parent = self.parent
-    local surfaces = self.surfaces
+    if not self:_isParentSizeChanged() then return end
 
-    local W, H = parent:GetWidth(), parent:GetHeight()
-    if self.W == W and self.H == H then return end
-    self.W, self.H = W, H
-
-    for surfaceIndex = 1, #surfaces do
-        local s = surfaces[surfaceIndex]
-
+    for surface, s in pairs(self.surfaces) do
         -- TODO: (..., unpack(s)) vs (..., s[1], s[2], ...)
-        self:_place(surfaceIndex, s[1], s[2], s[3], s[4], s[5], s[6])
+        self:_place(surface, s[1], s[2], s[3], s[4], s[5], s[6])
     end
 end
 
-function FlexRect:_updateSurface(surfaceIndex)
-    local s = self.surfaces[surfaceIndex]
-    self:_place(surfaceIndex, s[1], s[2], s[3], s[4], s[5], s[6])
+function FlexRect:_isParentSizeChanged()
+    local parent = self.parent
+
+    local W, H = parent:GetWidth(), parent:GetHeight()
+    if self.W == W and self.H == H then return end
+
+    self.W, self.H = W, H
+    return true
 end
 
-function FlexRect:RemoveSurface(index)
-    local surfaces = self.surfaces
-    local surfaceData = surfaces[index]
+function FlexRect:_updateSurface(surface)
+    local s = self.surfaces[surface]
+    self:_place(surface, s[1], s[2], s[3], s[4], s[5], s[6])
+end
 
-    local surface = table.remove(surfaces, index)
-    self.control:RemoveSurface(index)
+function FlexRect:RemoveSurface(surface)
+    surface:RemoveSurface()
 
     if self.quadtree then
-        self.quadtree:Remove(surfaceData)
-
-        -- TODO: rehashing is not the best thing to see... Very expensive deletion
-        local hash = self.hash
-        hash[surface] = nil
-        for i = index, #surfaces do
-            hash[surfaces[i]] = i
-        end
-
+        self.quadtree:Remove(surface)
         self.mouseOver[surface] = nil
-        self._onMouseExit(surface)
+        self._onMouseExit(self.surfaces[surface].tag)
     end
 end
 
@@ -316,7 +304,7 @@ function FlexRect:Clear()
     self.control:ClearAllSurfaces()
 
     ZO_ClearNumericallyIndexedTable(self.surfaces)
-    ZO_ClearTable(self.hash)
+    -- ZO_ClearTable(self.hash)
 
     if self.quadtree then
         self.quadtree:Clear()
@@ -344,8 +332,9 @@ function FlexRect:_onUpdate()
     local filtered = {}
     local mr_x, mr_y = m_x - x, m_y - y
     for _, result in ipairs(results) do
-        -- local surfaceIndex = self.hash[result]
-        local surfaceData = result.data
+        local surface = result.data
+        local surfaceData = self.surfaces[surface]
+
         local r_x, r_y = surfaceData[1] * W + surfaceData[3], surfaceData[2] * H + surfaceData[4]
         local halfSurfaceWidth, halfSurfaceHeight = surfaceData[5] / 2, surfaceData[6] / 2
 
@@ -353,7 +342,7 @@ function FlexRect:_onUpdate()
         r_x - halfSurfaceWidth < mr_x and
         r_y - halfSurfaceHeight < mr_y and
         r_y + halfSurfaceHeight > mr_y then
-            filtered[#filtered+1] = self.hash[surfaceData]
+            filtered[#filtered+1] = surface
         end
     end
 
@@ -364,10 +353,10 @@ function FlexRect:_onUpdate()
     self.mouseOver = mouseOver
 
     local added = {}
+    local surfaces = self.surfaces
 
     for i = 1, #filtered do
-        local surfaceIndex = filtered[i]
-        local surface = self.surfaces[surfaceIndex]
+        local surface = filtered[i]
 
         mouseOver[surface] = true
 
@@ -378,20 +367,20 @@ function FlexRect:_onUpdate()
 
     for surface in pairs(previousMouseOver) do
         if not mouseOver[surface] then
-            self._onMouseExit(surface)
-            self:_updateSurface(self.hash[surface])
+            self._onMouseExit(surfaces[surface].tag)
+            self:_updateSurface(surface)
         end
     end
 
     for surface in pairs(added) do
-        self._onMouseEnter(surface)
-        self:_updateSurface(self.hash[surface])
+        self._onMouseEnter(surfaces[surface].tag)
+        self:_updateSurface(surface)
     end
 end
 
 addon.Tools = {
     FlexRect = FlexRect,
-    -- RigidGrid = RigidGrid,
+    RigidGrid = RigidGrid,
 }
 
 -- ----------------------------------------------------------------------------
@@ -416,3 +405,4 @@ EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE, EVENT_ADD_ON_LOADED, OnAddonLoad
 
 IMP_LibSurfaceTools__Quadtree = nil
 IMP_LibSurfaceTools__class = nil
+IMP_LibSurfaceTools__SurfaceManager = nil

@@ -14,7 +14,9 @@ local function __surfaceProxy(compositeManager, stableId)
             if method then
                 return function(_, ...)
                     local surfaceIndex = compositeManager:GetSurfaceIndex(stableId)
-                    return method(compositeControl, surfaceIndex, ...)
+                    method(compositeControl, surfaceIndex, ...)
+
+                    return proxy
                 end
             end
             return nil
@@ -43,8 +45,8 @@ local SurfaceManager = class()
 
 function SurfaceManager:__init(composite)
     self.composite = composite
-    composite:ClearAllSurfaces()
-    composite:SetPixelRoundingEnabled(false)
+    -- composite:ClearAllSurfaces()
+    -- composite:SetPixelRoundingEnabled(false)
 
     self.surfaces = {}
     self.hash = {}
