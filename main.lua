@@ -174,16 +174,23 @@ function FlexRect:__init(parent, name, onMouseEnter, onMouseExit)
 
         -- if surface hidden, need to update all previously mouse over pins, TODO: make it effectively
         control:SetHandler('OnEffectivelyHidden', function()
-            for surface in pairs(self.mouseOver) do
-                self._onMouseExit(self.surfaces[surface].tag)
-                -- self:_updateSurface(self.hash[surface])
-            end
+            self:_clearMouseOver()
         end)
 
         self.quadtree = Quadtree()
     end
 
     return self
+end
+
+function FlexRect:_clearMouseOver()
+    for surface in pairs(self.mouseOver) do
+        local surfaces = self.surfaces
+        local surfaceData = surfaces[surface]
+        local tag = surfaceData.tag
+        self._onMouseExit(tag)
+        self.mouseOver[surface] = nil
+    end
 end
 
 function FlexRect:SetAnchor(...)
@@ -277,33 +284,36 @@ function FlexRect:_updateSurface(surface)
 end
 
 function FlexRect:RemoveSurface(surface)
-    surface:RemoveSurface()
-
     if self.quadtree then
-        self.quadtree:Remove(surface)
-        self.mouseOver[surface] = nil
         self._onMouseExit(self.surfaces[surface].tag)
+        self.mouseOver[surface] = nil
+        self.quadtree:Remove(surface)
     end
+
+    self.surfaces[surface] = nil
+    surface:RemoveSurface()
 end
 
-function FlexRect:RemoveSurfacesOfKind(atlasIndex)
-    -- TODO: kinda slow, make bulk delete
+-- function FlexRect:RemoveSurfacesOfKind(atlasIndex)
+--     -- TODO: kinda slow, make bulk delete
 
-    if not self.atlas then return end
+--     if not self.atlas then return end
 
-    local surfaces = self.surfaces
-    for index = #surfaces, 1, -1 do
-        local surface = surfaces[index]
-        if surface[7] == atlasIndex then
-            self:RemoveSurface(index)
-        end
-    end
-end
+--     local surfaces = self.surfaces
+--     for index = #surfaces, 1, -1 do
+--         local surface = surfaces[index]
+--         if surface[7] == atlasIndex then
+--             self:RemoveSurface(index)
+--         end
+--     end
+-- end
 
 function FlexRect:Clear()
     self.control:ClearAllSurfaces()
 
-    ZO_ClearNumericallyIndexedTable(self.surfaces)
+    self:_clearMouseOver()
+
+    ZO_ClearTable(self.surfaces)
     -- ZO_ClearTable(self.hash)
 
     if self.quadtree then
@@ -336,7 +346,7 @@ function FlexRect:_onUpdate()
         local surfaceData = self.surfaces[surface]
 
         local r_x, r_y = surfaceData[1] * W + surfaceData[3], surfaceData[2] * H + surfaceData[4]
-        local halfSurfaceWidth, halfSurfaceHeight = surfaceData[5] / 2, surfaceData[6] / 2
+        local halfSurfaceWidth, halfSurfaceHeight = surfaceData[5] / 1.75, surfaceData[6] / 1.75  -- arbitrary selected 1.75
 
         if r_x + halfSurfaceWidth > mr_x and
         r_x - halfSurfaceWidth < mr_x and
@@ -367,7 +377,9 @@ function FlexRect:_onUpdate()
 
     for surface in pairs(previousMouseOver) do
         if not mouseOver[surface] then
-            self._onMouseExit(surfaces[surface].tag)
+            local surfaceData = surfaces[surface]
+            local tag = surfaceData.tag
+            self._onMouseExit(tag)
             self:_updateSurface(surface)
         end
     end

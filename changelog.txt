@@ -1,3 +1,6 @@
+V. 5
+- Fixes for FlexRect mouseover
+
 V. 4
 - GutHub actions, manifest file fix
 
