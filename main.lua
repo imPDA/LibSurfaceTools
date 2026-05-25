@@ -14,7 +14,7 @@ local EVENT_NAMESPACE = addon.name
 
 local function _atlasIndexToAtlasXY(atlasIndex, atlasSizeX, atlasSizeY)
     atlasIndex = atlasIndex - 1
-    return atlasIndex % atlasSizeX + 1, floor(atlasIndex / atlasSizeY) + 1
+    return atlasIndex % atlasSizeX + 1, floor(atlasIndex / atlasSizeX) + 1
 end
 
 -- local function _atlasXYToAtlasIndex(atlasX, atlasY, atlasSizeX, atlasSizeY)
@@ -184,6 +184,8 @@ function FlexRect:__init(parent, name, onMouseEnter, onMouseExit)
 end
 
 function FlexRect:_clearMouseOver()
+    if not self._onMouseEnter then return end
+
     for surface in pairs(self.mouseOver) do
         local surfaces = self.surfaces
         local surfaceData = surfaces[surface]
@@ -294,19 +296,18 @@ function FlexRect:RemoveSurface(surface)
     surface:RemoveSurface()
 end
 
--- function FlexRect:RemoveSurfacesOfKind(atlasIndex)
---     -- TODO: kinda slow, make bulk delete
+function FlexRect:RemoveSurfacesOfKind(atlasIndex)
+    -- TODO: kinda slow, make bulk delete
 
---     if not self.atlas then return end
+    if not self.atlas then return end
 
---     local surfaces = self.surfaces
---     for index = #surfaces, 1, -1 do
---         local surface = surfaces[index]
---         if surface[7] == atlasIndex then
---             self:RemoveSurface(index)
---         end
---     end
--- end
+    local surfaces = self.surfaces
+    for surface, surfaceData in pairs(surfaces) do
+        if surfaceData[7] == atlasIndex then
+            self:RemoveSurface(surface)
+        end
+    end
+end
 
 function FlexRect:Clear()
     self.control:ClearAllSurfaces()
