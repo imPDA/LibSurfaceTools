@@ -144,7 +144,7 @@ function FlexRect:__init(parent, name, onMouseEnter, onMouseExit)
     control:SetHandler('OnUpdate', function() self:_onParentUpdate() end)
     control:SetAnchor(TOPLEFT, parent)
 
-    self.control = control
+    self.composite = control
     self.parent = parent
 
     self.surfaceManager = SurfaceManager(control)
@@ -196,7 +196,7 @@ function FlexRect:_clearMouseOver()
 end
 
 function FlexRect:SetAnchor(...)
-    self.control:SetAnchor(...)
+    self.composite:SetAnchor(...)
     return self
 end
 
@@ -204,7 +204,7 @@ function FlexRect:SetTexture(fileName, atlasSizeX, atlasSizeY)
     atlasSizeX = atlasSizeX or 1
     atlasSizeY = atlasSizeY or 1
 
-    self.control:SetTexture(fileName)
+    self.composite:SetTexture(fileName)
 
     if atlasSizeX > 1 or atlasSizeY > 1 then
         self.atlas = true
@@ -216,12 +216,12 @@ function FlexRect:SetTexture(fileName, atlasSizeX, atlasSizeY)
 end
 
 function FlexRect:SetColor(surfaceIndex, r, g, b, a)
-    self.control:SetColor(surfaceIndex, r, g, b, a)
+    self.composite:SetColor(surfaceIndex, r, g, b, a)
     return self
 end
 
 function FlexRect:SetAlpha(surfaceIndex, alpha)
-    self.control:SetSurfaceAlpha(surfaceIndex, alpha)
+    self.composite:SetSurfaceAlpha(surfaceIndex, alpha)
     return self
 end
 
@@ -310,7 +310,7 @@ function FlexRect:RemoveSurfacesOfKind(atlasIndex)
 end
 
 function FlexRect:Clear()
-    self.control:ClearAllSurfaces()
+    self.composite:ClearAllSurfaces()
 
     self:_clearMouseOver()
 
@@ -323,7 +323,7 @@ function FlexRect:Clear()
 end
 
 function FlexRect:_onUpdate()
-    local x, y = self.control:GetLeft(), self.control:GetTop()
+    local x, y = self.composite:GetLeft(), self.composite:GetTop()
     local m_x, m_y = GetUIMousePosition()
 
     -- TODO: width, height optimization
