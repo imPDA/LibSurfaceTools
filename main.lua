@@ -135,6 +135,7 @@ local FlexRect = class()
 function FlexRect:__init(parent, name, onMouseEnter, onMouseExit)
     -- parent = parent or addon.control
     name = name or ('$(parent)FlexRect'..parent:GetNumChildren())
+    self._eventNamespace = EVENT_NAMESPACE..name
 
     local control = CreateControl(name, parent, CT_TEXTURECOMPOSITE)
     assert(control, 'TextureComposite was not created!')
@@ -143,6 +144,7 @@ function FlexRect:__init(parent, name, onMouseEnter, onMouseExit)
     control:SetPixelRoundingEnabled(false)
     control:SetHandler('OnUpdate', function() self:_onParentUpdate() end)
     control:SetAnchor(TOPLEFT, parent)
+    -- control:SetAnchorFill(parent)
 
     self.composite = control
     self.parent = parent
@@ -180,6 +182,8 @@ function FlexRect:__init(parent, name, onMouseEnter, onMouseExit)
         self.quadtree = Quadtree()
     end
 
+    self.animations = {}
+
     return self
 end
 
@@ -190,7 +194,7 @@ function FlexRect:_clearMouseOver()
         local surfaces = self.surfaces
         local surfaceData = surfaces[surface]
         local tag = surfaceData.tag
-        self._onMouseExit(tag)
+        self._onMouseExit(tag, surface)
         self.mouseOver[surface] = nil
     end
 end
@@ -231,7 +235,7 @@ function FlexRect:Add(n_x, n_y, offsetX, offsetY, w, h, atlasIndex, tag)
     self:_place(surface, n_x, n_y, offsetX, offsetY, w, h)
 
     -- not very safe, but it should work OK until someone used it inproperly
-    local surfaceData = {n_x, n_y, offsetX, offsetY, w, h, atlasIndex, tag = tag}
+    local surfaceData = {n_x, n_y, offsetX, offsetY, w, h, atlasIndex, 1, tag = tag}  -- added current scale
     self.surfaces[surface] = surfaceData
 
     if self.quadtree then
@@ -244,9 +248,12 @@ end
 
 FlexRect.GetTextureInsets = GetTextureInsets
 
-function FlexRect:_place(surface, n_x, n_y, offsetX, offsetY, w, h)
+function FlexRect:_place(surface, n_x, n_y, offsetX, offsetY, w, h, scale)
     offsetX = offsetX or 0
     offsetY = offsetY or 0
+
+    scale = scale or 1
+    w, h = w * scale, h * scale
 
     local parent = self.parent
     local W, H = parent:GetWidth(), parent:GetHeight()
@@ -257,6 +264,8 @@ function FlexRect:_place(surface, n_x, n_y, offsetX, offsetY, w, h)
     local half_w, half_h = w/2, h/2
     local iL, iR = centerX - half_w, centerX + half_w
     local iT, iB = centerY - half_h, centerY + half_h
+    -- local iL, iR = centerX - half_w, centerX + half_w - W
+    -- local iT, iB = centerY - half_h, centerY + half_h - H
 
     surface:SetInsets(iL, iR, iT, iB)
 end
@@ -266,7 +275,7 @@ function FlexRect:_onParentUpdate()
 
     for surface, s in pairs(self.surfaces) do
         -- TODO: (..., unpack(s)) vs (..., s[1], s[2], ...)
-        self:_place(surface, s[1], s[2], s[3], s[4], s[5], s[6])
+        self:_place(surface, s[1], s[2], s[3], s[4], s[5], s[6], s[8])
     end
 end
 
@@ -282,18 +291,66 @@ end
 
 function FlexRect:_updateSurface(surface)
     local s = self.surfaces[surface]
-    self:_place(surface, s[1], s[2], s[3], s[4], s[5], s[6])
+    self:_place(surface, s[1], s[2], s[3], s[4], s[5], s[6], s[8])
 end
 
 function FlexRect:RemoveSurface(surface)
     if self.quadtree then
-        self._onMouseExit(self.surfaces[surface].tag)
+        self._onMouseExit(self.surfaces[surface].tag, surface)
         self.mouseOver[surface] = nil
         self.quadtree:Remove(surface)
     end
 
     self.surfaces[surface] = nil
     surface:RemoveSurface()
+end
+
+function FlexRect:AnimateScale(surface, startScale, endScale, duration)
+    self.animations[surface] = {startScale, endScale, duration/1000, GetGameTimeSeconds()}
+    self:_startAnimations()
+end
+
+function FlexRect:_startAnimations()
+    if self._animationInProgress then return end
+    self._animationInProgress = true
+
+    EVENT_MANAGER:RegisterForUpdate(self._eventNamespace..'Animations', 0, function()
+        self:_doAnimationStep()
+    end)
+end
+
+function FlexRect:_stopAnimations()
+    EVENT_MANAGER:UnregisterForUpdate(self._eventNamespace..'Animations')
+    self._animationInProgress = false
+end
+
+function FlexRect:_doAnimationStep()
+    for surface, animationParams in pairs(self.animations) do
+        local duration = animationParams[3]
+
+        local start = animationParams[4]
+        local now = GetGameTimeSeconds()
+        local progress = (now - start) / duration
+
+        if progress >= 1 then  -- TODO: something better, reuse, etc.
+            progress = 1
+            self.animations[surface] = nil
+        end
+
+        -- df('progress %.6f', progress)
+
+        -- local scale = zo_deltaNormalizedLerp(animationParams[1], animationParams[2], progress)
+        local scale = zo_lerp(animationParams[1], animationParams[2], progress)
+
+        local s = self.surfaces[surface]
+        s[8] = scale
+
+        self:_place(surface, s[1], s[2], s[3], s[4], s[5], s[6], s[8])
+    end
+
+    if not next(self.animations) then
+        self:_stopAnimations()
+    end
 end
 
 function FlexRect:RemoveSurfacesOfKind(atlasIndex)
@@ -380,13 +437,13 @@ function FlexRect:_onUpdate()
         if not mouseOver[surface] then
             local surfaceData = surfaces[surface]
             local tag = surfaceData.tag
-            self._onMouseExit(tag)
+            self._onMouseExit(tag, surface)
             self:_updateSurface(surface)
         end
     end
 
     for surface in pairs(added) do
-        self._onMouseEnter(surfaces[surface].tag)
+        self._onMouseEnter(surfaces[surface].tag, surface)
         self:_updateSurface(surface)
     end
 end
