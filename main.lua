@@ -302,6 +302,7 @@ function FlexRect:RemoveSurface(surface)
     end
 
     self.surfaces[surface] = nil
+    self.animations[surface] = nil
     surface:RemoveSurface()
 end
 
@@ -372,7 +373,7 @@ function FlexRect:Clear()
     self:_clearMouseOver()
 
     ZO_ClearTable(self.surfaces)
-    -- ZO_ClearTable(self.hash)
+    ZO_ClearTable(self.animations)
 
     if self.quadtree then
         self.quadtree:Clear()
