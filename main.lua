@@ -135,7 +135,8 @@ local FlexRect = class()
 function FlexRect:__init(parent, name, onMouseEnter, onMouseExit)
     -- parent = parent or addon.control
     name = name or ('$(parent)FlexRect'..parent:GetNumChildren())
-    self._eventNamespace = EVENT_NAMESPACE..name
+    local EN = EVENT_NAMESPACE..name
+    self._eventNamespace = EN
 
     local control = CreateControl(name, parent, CT_TEXTURECOMPOSITE)
     assert(control, 'TextureComposite was not created!')
@@ -150,42 +151,112 @@ function FlexRect:__init(parent, name, onMouseEnter, onMouseExit)
     self.parent = parent
 
     self.surfaceManager = SurfaceManager(control)
-    self.surfaces = {}
+    self.surfaces = setmetatable({}, {__mode='k'})
 
     if onMouseEnter then
         -- df('Mouse over enabled')
         self._onMouseEnter = onMouseEnter
         self._onMouseExit = onMouseExit
         self.mouseOver = {}
+        self._filteredHash = {}
+        self.quadtree = Quadtree()
 
         -- self.hash = {}  -- setmetatable({}, {__mode='k'})
 
-        control:SetMouseEnabled(true)
-
-        control:SetHandler('OnMouseEnter', function()
+        local function startMouseOverUpdateLoop()
             -- df('Mouse over %s', name)
-            EVENT_MANAGER:RegisterForUpdate(EVENT_NAMESPACE..name, 0, function()
+            EVENT_MANAGER:RegisterForUpdate(EN, 0, function()
                 self:_onUpdate()
             end)
-        end)
+        end
 
-        control:SetHandler('OnMouseExit', function()
-            -- df('Mouse exit %s', name)
-            EVENT_MANAGER:UnregisterForUpdate(EVENT_NAMESPACE..name)
-        end)
-
-        -- if surface hidden, need to update all previously mouse over pins, TODO: make it effectively
-        control:SetHandler('OnEffectivelyHidden', function()
+        local function stopMouseOverUpdateLoop()
+            -- df('[%d] Mouse exit %s', GetGameTimeMilliseconds(), name)
+            EVENT_MANAGER:UnregisterForUpdate(EN)
             self:_clearMouseOver()
-        end)
+        end
 
-        self.quadtree = Quadtree()
+        control:SetHandler('OnEffectivelyShown', startMouseOverUpdateLoop)
+        control:SetHandler('OnEffectivelyHidden', stopMouseOverUpdateLoop)
+
+        local isConsole = nil
+        local function switchInputMethod(toConsole)
+            -- df('toConsole: %s, isConsole: %s', tostring(toConsole), tostring(isConsole))
+            if toConsole == isConsole then return end
+            isConsole = toConsole
+
+            if toConsole then
+                self:_switchToConsoleInput()
+            else
+                self:_switchToMouseInput()
+            end
+        end
+
+        switchInputMethod(IsConsoleUI() or IsInGamepadPreferredMode())
+
+        EVENT_MANAGER:RegisterForEvent(EN, EVENT_GAMEPAD_PREFERRED_MODE_CHANGED, function(_, inGamepadPreferredMode)
+            switchInputMethod(inGamepadPreferredMode)
+        end)
     end
 
     self.animations = {}
 
     return self
 end
+
+function FlexRect:_switchToMouseInput()
+    self:_clearInputMethod()
+    local control = self.composite
+
+    self._getCursorPosition = self._getCursorPositionMouse
+    control:SetMouseEnabled(true)
+
+    --[[
+    control:SetHandler('OnMouseEnter', self._registerMouseOverUpdateLoop)
+    control:SetHandler('OnMouseExit', self._unregisterMouseOverUpdateLoop)
+
+    -- if surface hidden, need to update all previously mouse over pins, TODO: make it effectively
+    control:SetHandler('OnEffectivelyHidden', function()
+        self:_clearMouseOver()
+    end)
+    --]]
+end
+
+function FlexRect:_switchToConsoleInput()
+    self:_clearInputMethod()
+    local control = self.composite
+
+    self._getCursorPosition = self._getCursorPositionController
+    control:SetMouseEnabled(false)
+
+    --[[
+    control:SetHandler('OnEffectivelyShown', self._registerMouseOverUpdateLoop)
+    control:SetHandler('OnEffectivelyHidden', function()
+        self._unregisterMouseOverUpdateLoop()
+        self:_clearMouseOver()
+    end)
+    --]]
+end
+
+function FlexRect:_clearInputMethod()
+    self:_clearMouseOver()
+
+    local control = self.composite
+
+    -- control:SetHandler('OnMouseEnter', nil)
+    -- control:SetHandler('OnMouseExit', nil)
+    -- control:SetHandler('OnEffectivelyShown', nil)
+    -- control:SetHandler('OnEffectivelyHidden', nil)
+end
+
+--[[
+function FlexRect:_hookMapContainer()
+    local control = self.composite
+
+    ZO_PostHook(_G, 'ZO_WorldMap_MouseEnter', function(_, ...) control:GetHandler('OnMouseEnter')(control) end)
+	ZO_PostHook(_G, 'ZO_WorldMap_MouseExit', function(_, ...) control:GetHandler('OnMouseExit')(control) end)
+end
+--]]
 
 function FlexRect:_clearMouseOver()
     if not self._onMouseEnter then return end
@@ -270,20 +341,29 @@ function FlexRect:_place(surface, n_x, n_y, offsetX, offsetY, w, h, scale)
     surface:SetInsets(iL, iR, iT, iB)
 end
 
-local measurements = {}
-local start, finish
-local N = 100
 function FlexRect:_onParentUpdate()
-    start = GetGameTimeSeconds()
     if not self:_isParentSizeChanged() then return end
 
     for surface, s in pairs(self.surfaces) do
         -- TODO: (..., unpack(s)) vs (..., s[1], s[2], ...)
         self:_place(surface, s[1], s[2], s[3], s[4], s[5], s[6], s[8])
     end
-    finish = GetGameTimeSeconds()
+end
 
-    measurements[#measurements+1] = finish - start
+--[[
+local measurements = {}
+local s, f
+local N = 100
+local original = FlexRect._onParentUpdate
+function FlexRect:_onParentUpdate()
+    -- size was not changed = do notmeter
+    if self.W == self.parent:GetWidth() then return end
+
+    s = GetGameTimeSeconds()
+    original(self)
+    f = GetGameTimeSeconds()
+
+    measurements[#measurements+1] = f - s
     if #measurements >= N then
         local total = 0
         local max = 0
@@ -298,6 +378,7 @@ function FlexRect:_onParentUpdate()
         ZO_ClearNumericallyIndexedTable(measurements)
     end
 end
+--]]
 
 function FlexRect:_isParentSizeChanged()
     local parent = self.parent
@@ -400,9 +481,17 @@ function FlexRect:Clear()
     end
 end
 
+function FlexRect:_getCursorPositionMouse()
+    return GetUIMousePosition()
+end
+
+function FlexRect:_getCursorPositionController()
+    return ZO_WorldMapScroll:GetCenter()
+end
+
 function FlexRect:_onUpdate()
     local x, y = self.composite:GetLeft(), self.composite:GetTop()
-    local m_x, m_y = GetUIMousePosition()
+    local m_x, m_y = self:_getCursorPosition()
 
     -- TODO: width, height optimization
     local parent = self.parent
@@ -418,7 +507,9 @@ function FlexRect:_onUpdate()
 
     -- df('%d', #results)
 
-    local filtered = {}
+    local filtered = self._filteredHash
+    ZO_ClearNumericallyIndexedTable(filtered)
+
     local mr_x, mr_y = m_x - x, m_y - y
     for _, result in ipairs(results) do
         local surface = result.data
@@ -438,7 +529,7 @@ function FlexRect:_onUpdate()
     -- df('%d', #filtered)
 
     local previousMouseOver = self.mouseOver
-    local mouseOver = {}
+    local mouseOver = {}  -- TODO: avoid table creation
     self.mouseOver = mouseOver
 
     local added = {}

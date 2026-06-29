@@ -9,15 +9,16 @@ local function __surfaceProxy(compositeManager, stableId)
     local proxy = {}
 
     local mt = {
-        __index = function(_, methodName)
+        __index = function(t, methodName)
             local method = compositeControl[methodName]
             -- does not check is correct method called btw
             if method then
-                return function(_, ...)
+                local f = function(_, ...)
                     method(compositeControl, stableId, ...)
-
-                    return proxy
+                    return t
                 end
+                t[methodName] = f
+                return f
             end
             return nil
         end
