@@ -27,6 +27,11 @@ local function __surfaceProxy(compositeManager, stableId)
         compositeManager:RemoveSurface(stableId)
     end
 
+    function proxy:SetInsets(iL, iR, iT, iB)
+        compositeControl:SetInsets(stableId, iL, iR, iT, iB)
+        return proxy
+    end
+
     setmetatable(proxy, mt)
     return proxy
 end

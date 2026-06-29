@@ -270,12 +270,32 @@ function FlexRect:_place(surface, n_x, n_y, offsetX, offsetY, w, h, scale)
     surface:SetInsets(iL, iR, iT, iB)
 end
 
+local measurements = {}
+local start, finish
+local N = 100
 function FlexRect:_onParentUpdate()
+    start = GetGameTimeSeconds()
     if not self:_isParentSizeChanged() then return end
 
     for surface, s in pairs(self.surfaces) do
         -- TODO: (..., unpack(s)) vs (..., s[1], s[2], ...)
         self:_place(surface, s[1], s[2], s[3], s[4], s[5], s[6], s[8])
+    end
+    finish = GetGameTimeSeconds()
+
+    measurements[#measurements+1] = finish - start
+    if #measurements >= N then
+        local total = 0
+        local max = 0
+        for i = 1, #measurements do
+            local m = measurements[i]  -- single measurement
+            total = total + m
+            if m > max then
+                max = m
+            end
+        end
+        df('Update time: %.3fms, max: %.3fms', total / #measurements * 1000, max * 1000)
+        ZO_ClearNumericallyIndexedTable(measurements)
     end
 end
 
