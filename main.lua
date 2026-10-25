@@ -164,16 +164,20 @@ function FlexRect:__init(parent, name, onMouseEnter, onMouseExit)
         -- self.hash = {}  -- setmetatable({}, {__mode='k'})
 
         local function startMouseOverUpdateLoop()
-            -- df('Mouse over %s', name)
-            EVENT_MANAGER:RegisterForUpdate(EN, 0, function()
+            -- df('[%d] Update loop started for %s', GetGameTimeMilliseconds(), name)
+            EVENT_MANAGER:RegisterForUpdate(EN..'UpdateLoop', 0, function()
                 self:_onUpdate()
             end)
         end
 
         local function stopMouseOverUpdateLoop()
-            -- df('[%d] Mouse exit %s', GetGameTimeMilliseconds(), name)
-            EVENT_MANAGER:UnregisterForUpdate(EN)
+            -- df('[%d] Update loop stopped for %s', GetGameTimeMilliseconds(), name)
+            EVENT_MANAGER:UnregisterForUpdate(EN..'UpdateLoop')
             self:_clearMouseOver()
+        end
+
+        if not self.composite:IsHidden() then
+            startMouseOverUpdateLoop()
         end
 
         control:SetHandler('OnEffectivelyShown', startMouseOverUpdateLoop)
@@ -301,7 +305,15 @@ function FlexRect:SetAlpha(surfaceIndex, alpha)
 end
 
 function FlexRect:Add(n_x, n_y, offsetX, offsetY, w, h, atlasIndex, tag)
-    local surface = self.surfaceManager:AddSurface(self:GetTextureInsets(atlasIndex))
+    local surface
+    if self.atlas then
+        surface = self.surfaceManager:AddSurface(self:GetTextureInsets(atlasIndex))
+    else
+        surface = self.surfaceManager:AddSurface(0, 1, 0, 1)
+    end
+
+    offsetX = offsetX or 0
+    offsetY = offsetY or 0
 
     self:_place(surface, n_x, n_y, offsetX, offsetY, w, h)
 
@@ -327,7 +339,7 @@ function FlexRect:_place(surface, n_x, n_y, offsetX, offsetY, w, h, scale)
     w, h = w * scale, h * scale
 
     local parent = self.parent
-    local W, H = parent:GetWidth(), parent:GetHeight()
+    local W, H = parent:GetDimensions()
 
     local centerX = W * n_x + offsetX
     local centerY = H * n_y + offsetY
@@ -383,7 +395,7 @@ end
 function FlexRect:_isParentSizeChanged()
     local parent = self.parent
 
-    local W, H = parent:GetWidth(), parent:GetHeight()
+    local W, H = parent:GetDimensions()
     if self.W == W and self.H == H then return end
 
     self.W, self.H = W, H
@@ -495,7 +507,7 @@ function FlexRect:_onUpdate()
 
     -- TODO: width, height optimization
     local parent = self.parent
-    local W, H = parent:GetWidth(), parent:GetHeight()
+    local W, H = parent:GetDimensions()
     local mn_x, mn_y = (m_x - x) / W, (m_y - y) / H
 
     -- TODO: need some arbitrary width and height...
@@ -549,15 +561,187 @@ function FlexRect:_onUpdate()
         if not mouseOver[surface] then
             local surfaceData = surfaces[surface]
             local tag = surfaceData.tag
-            self._onMouseExit(tag, surface)
+            self._onMouseExit(tag, surface, self)
             self:_updateSurface(surface)
         end
     end
 
     for surface in pairs(added) do
-        self._onMouseEnter(surfaces[surface].tag, surface)
+        self._onMouseEnter(surfaces[surface].tag, surface, self)
         self:_updateSurface(surface)
     end
+end
+
+-- TODO: should they be part of class or instance?
+local ownInformationTooltip = false
+-- local shouldLayout = false
+
+function FlexRect:_layoutTooltip()
+    if SCENE_MANAGER:IsCurrentSceneGamepad() then return end  -- TODO: gamepad support
+
+    local informationTooltip = ZO_WorldMap_GetTooltipForMode(ZO_MAP_TOOLTIP_MODE.INFORMATION)
+
+    local claimedBefore = {}
+
+    for _, mode in ipairs(ZO_WORLD_MAP_TOOLTIP_ORDER) do
+        local tt = ZO_WorldMap_GetTooltipForMode(mode)
+        claimedBefore[mode] = tt and not tt:IsHidden()
+    end
+
+    local surfacesByMode = {}
+    for surface in pairs(self.mouseOver) do
+        local info = self.pinTooltipInfo
+        if info and info.tooltip and info.creator then
+            local layout = true
+
+            -- TODO: vanilla esoui\ingame\map\worldmap.lua has more complex logic here, probably useful
+
+            if layout and info.hasTooltip then
+                layout = info.hasTooltip(self.surfaces[surface].tag)
+            end
+
+            if layout then
+                surfacesByMode[info.tooltip] = surfacesByMode[info.tooltip] or {}
+                table.insert(surfacesByMode[info.tooltip], surface)
+            end
+        end
+    end
+    if next(surfacesByMode) == nil then return end
+
+    for mode, surfaces in pairs(surfacesByMode) do
+        if not claimedBefore[mode] then
+            if mode == ZO_MAP_TOOLTIP_MODE.KEEP then
+                ZO_WorldMap_GetTooltipForMode(mode):SetHidden(false)
+            else
+                InitializeTooltip(ZO_WorldMap_GetTooltipForMode(mode), self.composite)
+
+                -- local control = surfaces[1]:GetControl()
+                -- if control then
+                --     InitializeTooltip(ZO_WorldMap_GetTooltipForMode(mode), control)
+                -- end
+            end
+            if mode == ZO_MAP_TOOLTIP_MODE.INFORMATION then
+                ownInformationTooltip = true
+            end
+        end
+        -- claimedBefore[mode] == true means vanilla owns it this pass;
+        -- our flag must NOT be set (vanilla's anchoring loop will set g_owns)
+    end
+
+    if surfacesByMode[ZO_MAP_TOOLTIP_MODE.INFORMATION] then
+        if claimedBefore[ZO_MAP_TOOLTIP_MODE.INFORMATION] then
+            informationTooltip:AddVerticalPadding(5)
+        end
+        for _, surface in ipairs(surfacesByMode[ZO_MAP_TOOLTIP_MODE.INFORMATION]) do
+            self.pinTooltipInfo.creator(self.surfaces[surface].tag)
+            informationTooltip:AddVerticalPadding(5)
+        end
+        informationTooltip:AddVerticalPadding(-5)
+    end
+
+    for mode, surfaces in pairs(surfacesByMode) do
+        if mode ~= ZO_MAP_TOOLTIP_MODE.INFORMATION then
+            for _, surface in ipairs(surfaces) do
+                self.pinTooltipInfo.creator(self.surfaces[surface].tag)
+            end
+        end
+    end
+
+    -- reanchor everything
+    local prevControl = nil
+    local placeAbove = GuiMouse:GetTop() > (GuiRoot:GetHeight() / 2)
+    local placeLeft  = GuiMouse:GetLeft() > (GuiRoot:GetWidth() / 2)
+    for _, mode in ipairs(ZO_WORLD_MAP_TOOLTIP_ORDER) do
+        local tooltipControl = ZO_WorldMap_GetTooltipForMode(mode)
+        if tooltipControl and not tooltipControl:IsHidden() then
+            tooltipControl:ClearAnchors()
+            if prevControl then
+                if placeLeft then
+                    if placeAbove then
+                        tooltipControl:SetAnchor(BOTTOMRIGHT, prevControl, TOPRIGHT, 0, -5)
+                    else
+                        tooltipControl:SetAnchor(TOPRIGHT, prevControl, BOTTOMRIGHT, 0, 5)
+                    end
+                else
+                    if placeAbove then
+                        tooltipControl:SetAnchor(BOTTOMLEFT, prevControl, TOPLEFT, 0, -5)
+                    else
+                        tooltipControl:SetAnchor(TOPLEFT, prevControl, BOTTOMLEFT, 0, 5)
+                    end
+                end
+            else
+                if placeLeft then
+                    tooltipControl:SetAnchor(RIGHT, GuiMouse, LEFT, -32, 0)
+                else
+                    tooltipControl:SetAnchor(LEFT, GuiMouse, RIGHT, 32, 0)
+                end
+            end
+            prevControl = tooltipControl
+        end
+    end
+end
+
+local TOOLTIP_HOOKED = false
+function FlexRect:InitializeTooltipHook()
+    -- TODO: implement something better
+    -- if self.tooltipHooked then return end
+    -- self.tooltipHooked = true
+
+    if TOOLTIP_HOOKED then return end
+    TOOLTIP_HOOKED = true
+
+    local function GetInformationTooltip(isGamepadMode)
+        if isGamepadMode then
+            return ZO_MapLocationTooltip_Gamepad
+        else
+            return InformationTooltip
+        end
+    end
+
+    ZO_PostHook(_G, 'ZO_WorldMap_HideAllTooltipsLater', function()
+        if not ownInformationTooltip then return end
+
+        local NOT_GAMEPAD_MODE = false
+        local tt = GetInformationTooltip(NOT_GAMEPAD_MODE)
+        if not tt:IsHidden() then
+            ClearTooltip(tt)
+        else
+            ownInformationTooltip = false
+        end
+    end)
+end
+
+function FlexRect:AddTooltip(pinTooltipInfo)
+    self.pinTooltipInfo = pinTooltipInfo
+
+    self:InitializeTooltipHook()
+
+    -- TODO: check to not add hook twice
+    ZO_PostHook(self, '_onMouseEnter', function()
+        df('Update triggered by LibSurfaceTools')
+        -- WORLD_MAP_MANAGER:UpdatePinTooltips()
+        WORLD_MAP_MANAGER.pinTooltipIsDirty = true
+        WORLD_MAP_MANAGER:UpdateMouseoverTooltips()
+    end)
+
+    ZO_PostHook(self, '_onMouseExit', function()
+        -- TODO: be sure to remove surface from self.mouseOver first
+        WORLD_MAP_MANAGER.pinTooltipIsDirty = true
+        WORLD_MAP_MANAGER:UpdateMouseoverTooltips()
+    end)
+
+    ZO_PostHook(WORLD_MAP_MANAGER, 'UpdatePinTooltips', function()
+        self.shouldLayout = true
+    end)
+
+    ZO_PostHook(WORLD_MAP_MANAGER, 'UpdateMouseoverTooltips', function(self_, resetScroll)
+        -- df('Update mouseover tooltips called')
+
+        if not self.shouldLayout then return end
+        self.shouldLayout = false
+
+        self:_layoutTooltip()
+    end)
 end
 
 addon.Tools = {
@@ -569,8 +753,6 @@ addon.Tools = {
 
 function addon:Initialize()
     self.control = LibSurfaceTools_TLC
-
-    LibSurfaceTools = self
 end
 
 -- ----------------------------------------------------------------------------
@@ -584,6 +766,8 @@ end
 
 
 EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE, EVENT_ADD_ON_LOADED, OnAddonLoaded)
+
+LibSurfaceTools = addon
 
 IMP_LibSurfaceTools__Quadtree = nil
 IMP_LibSurfaceTools__class = nil
