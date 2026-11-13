@@ -1,3 +1,7 @@
+V. 9
+- WIP: PC/console integration with default tooltips
+- bugfixes and optimizations
+
 V. 6-8
 - Added Scale animation for FlexRect
 

@@ -143,6 +143,7 @@ function FlexRect:__init(parent, name, onMouseEnter, onMouseExit)
 
     control:ClearAllSurfaces()
     control:SetPixelRoundingEnabled(false)
+    self.W, self.H = parent:GetDimensions()
     control:SetHandler('OnUpdate', function() self:_onParentUpdate() end)
     control:SetAnchor(TOPLEFT, parent)
     -- control:SetAnchorFill(parent)
@@ -269,7 +270,7 @@ function FlexRect:_clearMouseOver()
         local surfaces = self.surfaces
         local surfaceData = surfaces[surface]
         local tag = surfaceData.tag
-        self._onMouseExit(tag, surface)
+        self._onMouseExit(tag, surface, self)
         self.mouseOver[surface] = nil
     end
 end
@@ -304,13 +305,23 @@ function FlexRect:SetAlpha(surfaceIndex, alpha)
     return self
 end
 
-function FlexRect:Add(n_x, n_y, offsetX, offsetY, w, h, atlasIndex, tag)
-    local surface
+function FlexRect:Add(n_x, n_y, offsetX, offsetY, w, h, atlasIndex, tag, zoom)
+    local iL, iR, iT, iB
     if self.atlas then
-        surface = self.surfaceManager:AddSurface(self:GetTextureInsets(atlasIndex))
+        iL, iR, iT, iB = self:GetTextureInsets(atlasIndex)
     else
-        surface = self.surfaceManager:AddSurface(0, 1, 0, 1)
+        iL, iR, iT, iB = 0, 1, 0, 1
     end
+
+    if zoom and zoom ~= 1 then
+        local dX, dY = iR - iL, iB - iT
+        dX = dX / zoom / 2
+        dY = dY / zoom / 2
+
+        iL, iR, iT, iB = iL + dX, iR - dX, iT + dY, iB - dY
+    end
+
+    local surface = self.surfaceManager:AddSurface(iL, iR, iT, iB)
 
     offsetX = offsetX or 0
     offsetY = offsetY or 0
@@ -338,8 +349,7 @@ function FlexRect:_place(surface, n_x, n_y, offsetX, offsetY, w, h, scale)
     scale = scale or 1
     w, h = w * scale, h * scale
 
-    local parent = self.parent
-    local W, H = parent:GetDimensions()
+    local W, H = self.W, self.H
 
     local centerX = W * n_x + offsetX
     local centerY = H * n_y + offsetY
@@ -409,7 +419,7 @@ end
 
 function FlexRect:RemoveSurface(surface)
     if self.quadtree then
-        self._onMouseExit(self.surfaces[surface].tag, surface)
+        self._onMouseExit(self.surfaces[surface].tag, surface, self)
         self.mouseOver[surface] = nil
         self.quadtree:Remove(surface)
     end
@@ -505,9 +515,7 @@ function FlexRect:_onUpdate()
     local x, y = self.composite:GetLeft(), self.composite:GetTop()
     local m_x, m_y = self:_getCursorPosition()
 
-    -- TODO: width, height optimization
-    local parent = self.parent
-    local W, H = parent:GetDimensions()
+    local W, H = self.W, self.H
     local mn_x, mn_y = (m_x - x) / W, (m_y - y) / H
 
     -- TODO: need some arbitrary width and height...
@@ -718,7 +726,7 @@ function FlexRect:AddTooltip(pinTooltipInfo)
 
     -- TODO: check to not add hook twice
     ZO_PostHook(self, '_onMouseEnter', function()
-        df('Update triggered by LibSurfaceTools')
+        -- df('Update triggered by LibSurfaceTools')
         -- WORLD_MAP_MANAGER:UpdatePinTooltips()
         WORLD_MAP_MANAGER.pinTooltipIsDirty = true
         WORLD_MAP_MANAGER:UpdateMouseoverTooltips()

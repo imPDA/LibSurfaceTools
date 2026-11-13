@@ -33,6 +33,12 @@ local function __surfaceProxy(compositeManager, stableId)
         return proxy
     end
 
+    -- TODO: it seems to work incorrectly when called via proxy?
+    -- can't reproduce because I don't need this function anymore
+    -- function proxy:GetInsets()
+    --     return compositeControl:GetInsets(stableId)
+    -- end
+
     setmetatable(proxy, mt)
     return proxy
 end
